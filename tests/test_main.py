@@ -196,6 +196,59 @@ class MapAssistantTests(unittest.TestCase):
             if action != "toggle_mode":
                 self.assertTrue(self.app.sidebar.contains(rect))
 
+    def test_battle_initiative_and_only_first_actor_can_move(self):
+        for kind in ("square", "hex"):
+            self.app.mode = "edit"
+            self.app.init_battle()
+            self.load()
+            self.app.grid_type = kind
+            self.app.action("toggle_mode")
+            self.app.action("start_battle")
+            self.assertIsNone(self.app.battle_state)
+            for name in ("Воин", "Маг", "Гоблин"):
+                self.app.player_name = name
+                self.app.add_player()
+            self.app.action("start_battle")
+            self.app.initiative_text = ""
+            self.app.action("confirm_initiative")
+            self.assertEqual(self.app.initiative_index, 0)
+            for value in ("-2", "18", "18"):
+                self.app.initiative_text = value
+                self.app.action("confirm_initiative")
+            self.assertEqual(self.app.turn_order, [1, 2, 0])
+            self.assertEqual(self.app.active_actor, 1)
+            self.app.draw()
+            for index in (0, 1):
+                origin = pygame.Vector2(self.app.canvas.topleft)+self.app.pan
+                p = origin+self.app.cell_center(self.app.players[index].cell)*self.app.zoom
+                pos = (round(p.x), round(p.y))
+                self.app.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=pos))
+                self.assertEqual(self.app.token_drag, 1 if index == 1 else None)
+                if index == 1:
+                    cell = self.app.players[index].cell
+                    dest = (cell[0]+3, cell[1])
+                    self.assertTrue(self.app.cell_available(dest))
+                    p = origin+self.app.cell_center(dest)*self.app.zoom
+                    self.app.handle_event(pygame.event.Event(pygame.MOUSEBUTTONUP, button=1, pos=(round(p.x), round(p.y))))
+                    self.assertEqual(self.app.players[index].cell, dest)
+            count = len(self.app.players)
+            self.app.add_player()
+            self.assertEqual(len(self.app.players), count)
+            self.app.action("end_battle")
+            self.assertIsNone(self.app.active_actor)
+
+    def test_health_arc_shrinks_symmetrically(self):
+        from battle import health_arc_points
+        import math
+        for fraction in (1, .75, .5, .25):
+            points = health_arc_points((100, 100), 30, fraction)
+            first, last = points[0], points[-1]
+            self.assertAlmostEqual(first[0]+last[0], 200)
+            self.assertAlmostEqual(first[1], last[1])
+            for x, y in points:
+                self.assertAlmostEqual(math.hypot(x-100, y-100), 30)
+        self.assertEqual(health_arc_points((0, 0), 30, 0), [])
+
     def test_hp_input_and_tab_navigation(self):
         self.load()
         self.app.action("toggle_mode")

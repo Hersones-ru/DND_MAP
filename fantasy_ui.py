@@ -34,6 +34,7 @@ class FantasyUI:
                 ("body", "dejavusans,segoeui,arial", 15, False),
                 ("title", "dejavuserif,georgia", 32, True),
                 ("heading", "dejavuserif,georgia", 21, False),
+                ("token", "dejavusans,segoeui,arial", 20, True),
                 ("value", "dejavusans,segoeui,arial", 22, False),
             )
         }
@@ -65,8 +66,20 @@ class FantasyUI:
             self.buttons.extend([(self.box(x, 260, 126, 34), "kind_player"),
                                  (self.box(x+136, 260, 126, 34), "kind_enemy"),
                                  (self.box(x, 476, 262, 38), "add_player")])
-            for i in range(self.player_scroll, min(len(self.players), self.player_scroll+self.roster_capacity())):
-                self.buttons.append((self.box(x, 594+(i-self.player_scroll)*48, 262, 40), f"player_{i}"))
+            self.buttons.append((self.box(x, 530, 262, 38), "start_battle"))
+            roster_start = 624
+            order = list(range(len(self.players)))
+            if self.battle_state == "setup":
+                self.initiative_field = self.box(x, 380, 262, 48)
+                self.buttons = [(self.box(x, 448, 262, 38), "confirm_initiative"),
+                                (self.box(x, 620, 262, 38), "end_battle")]
+                order = []
+            elif self.battle_state == "active":
+                self.buttons = [(self.box(x, 380, 262, 38), "end_battle")]
+                order = self.turn_order
+                roster_start = 494
+            for row, i in enumerate(order[self.player_scroll:self.player_scroll+self.roster_capacity()]):
+                self.buttons.append((self.box(x, roster_start+row*48, 262, 40), f"player_{i}"))
         self.buttons.append((self.box(self.sx+15, 108, 272, 30), "toggle_mode"))
         self._background = self.make_background((w, h))
 
@@ -196,11 +209,15 @@ class FantasyUI:
         mouse = pygame.mouse.get_pos()
         labels["toggle_mode"] = "К редактированию" if self.mode == "play" else "Начать игру"
         labels["add_player"] = "+ Добавить участника"
+        labels["start_battle"] = "Начать сражение"
+        labels["confirm_initiative"] = "Начать бой" if self.initiative_index == len(self.players)-1 else "Следующий участник"
+        labels["end_battle"] = "Отменить" if self.battle_state == "setup" else "Завершить сражение"
         labels["kind_player"] = "Игрок"
         labels["kind_enemy"] = "Противник"
         for i, player in enumerate(self.players):
             # Fit arbitrary Unicode names to the roster width.
-            name = ("Враг · " if player.kind == "enemy" else "") + player.name
+            prefix = f"{player.initiative} · " if self.battle_state == "active" else "Враг · " if player.kind == "enemy" else ""
+            name = prefix + player.name
             full_name = name
             available = self.px(262-30)-self.fonts["body"].size(f"{player.hp}/{player.max_hp}")[0]
             while name and self.fonts["body"].size(name + "…")[0] > available:

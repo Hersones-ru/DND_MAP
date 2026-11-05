@@ -5,6 +5,7 @@ import math
 
 import pygame
 import pygame.gfxdraw
+from battle import BattleMode, health_arc_points
 
 
 @dataclass
@@ -15,10 +16,12 @@ class Character:
     hp: int = 10
     max_hp: int = 10
     kind: str = "player"
+    initiative: int | None = None
 
 
-class PlayMode:
+class PlayMode(BattleMode):
     def init_play(self):
+        self.init_battle()
         self.mode = "edit"
         self.players = []
         self.player_name = ""
@@ -62,6 +65,9 @@ class PlayMode:
                 and all(i == exclude or player.cell != cell for i, player in enumerate(self.players)))
 
     def add_player(self):
+        if self.battle_state is not None:
+            self.notify("Сначала завершите сражение.")
+            return
         name = self.player_name.strip()
         if self.image is None:
             self.notify("Сначала загрузите карту в режиме редактирования.")
@@ -116,9 +122,15 @@ class PlayMode:
         self.notify(f"{name} вступает в приключение.")
 
     def roster_capacity(self):
-        return max(1, int((self.uh-644)//48))
+        start = 494 if self.battle_state == "active" else 624
+        return max(1, int((self.uh-start-72)//48))
 
     def play_action(self, action):
+        if self.battle_action(action):
+            return True
+        if action == "toggle_mode" and self.battle_state is not None:
+            self.notify("Сначала завершите или отмените сражение.")
+            return True
         if action in ("kind_player", "kind_enemy"):
             self.character_kind = action.removeprefix("kind_")
             return True
@@ -144,6 +156,8 @@ class PlayMode:
     def handle_play_event(self, event):
         if self.mode != "play":
             return False
+        if self.handle_battle_event(event):
+            return True
         if event.type == pygame.DROPFILE:
             self.notify("Для замены карты переключитесь в редактирование.")
             return True
@@ -176,7 +190,7 @@ class PlayMode:
             self.name_focused = False
             pygame.key.stop_text_input()
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            field = next((name for name, rect in self.input_rects.items() if rect.collidepoint(event.pos)), None)
+            field = next((name for name, rect in self.input_rects.items() if rect.collidepoint(event.pos)), None) if self.battle_state is None else None
             self.name_focused = field is not None
             if field is not None:
                 self.input_field = field
@@ -190,6 +204,9 @@ class PlayMode:
                 world = self.to_world(event.pos)
                 self.token_drag = next((i for i, p in reversed(list(enumerate(self.players)))
                                         if self.cell_center(p.cell).distance_to(world) <= self.cell_size*.34), None)
+                if self.battle_state == "active" and self.token_drag != self.active_actor:
+                    self.token_drag = None
+                    self.notify("Сейчас ходит другой участник.")
                 self.selected_player = self.token_drag
                 self.token_pointer = event.pos
                 return True
@@ -231,9 +248,15 @@ class PlayMode:
             if player.kind == "enemy":
                 pygame.draw.line(self.screen, (255, 207, 180), (x-radius//2, y-radius//2),
                                  (x+radius//2, y-radius//2), max(1, self.px(2)))
-            if self.selected_player == i:
-                pygame.gfxdraw.aacircle(self.screen, x, y, radius+3, (246, 214, 145))
-            glyph = self.render_text(player.name[:1].upper(), (28, 22, 35))
+            ring_radius = radius + max(3, self.px(4))
+            pygame.gfxdraw.aacircle(self.screen, x, y, ring_radius, (75, 35, 49))
+            points = health_arc_points((x, y), ring_radius, player.hp/player.max_hp)
+            if points:
+                pygame.draw.lines(self.screen, (235, 65, 85), False, points, max(2, self.px(3)))
+            if self.selected_player == i or self.active_actor == i:
+                pygame.gfxdraw.aacircle(self.screen, x, y, ring_radius+4,
+                                       (117, 225, 196) if self.active_actor == i else (246, 214, 145))
+            glyph = self.render_text(player.name[:1].upper(), (28, 22, 35), "token")
             if glyph.get_height() < radius*1.8:
                 self.screen.blit(glyph, (x-glyph.get_width()//2, y-glyph.get_height()//2))
         self.screen.set_clip(None)
@@ -241,6 +264,9 @@ class PlayMode:
     def draw_play_panel(self):
         from fantasy_ui import GOLD, MUTED, PALE, EDGE
         x = self.sx+20
+        if self.battle_state is not None:
+            self.draw_battle_panel()
+            return
         self.label("Участники истории", (x, 220), GOLD, "heading")
         self.label("Имя персонажа / существа", (x, 310), MUTED, "small")
         self.label("Текущие ХП", (x, 392), MUTED, "small")
@@ -253,5 +279,4 @@ class PlayMode:
             cursor = "|" if focused and pygame.time.get_ticks()%1000 < 500 else ""
             self.label(values[key]+cursor, (rect.x/self.ui_scale+9, rect.y/self.ui_scale+10),
                        PALE, max_width=rect.w/self.ui_scale-18)
-        self.label("ЛКМ: перетащить монетку", (x, 526), MUTED, "small")
-        self.label("Список: выбрать и найти", (x, 551), MUTED, "small")
+        self.label("ЛКМ: монетка · Колесо: вид", (x, 580), MUTED, "small")
