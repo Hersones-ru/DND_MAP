@@ -71,13 +71,92 @@ class MapAssistantTests(unittest.TestCase):
         with patch("pygame.mouse.get_pos", return_value=point), patch("pygame.key.get_mods", return_value=0):
             size, zoom = self.app.cell_size, self.app.zoom
             self.app.handle_event(wheel)
+            self.app.update(1 / 60)
             self.assertGreater(self.app.cell_size, size)
             self.assertEqual(self.app.zoom, zoom)
         world = self.app.to_world(point)
         with patch("pygame.mouse.get_pos", return_value=point), patch("pygame.key.get_mods", return_value=pygame.KMOD_CTRL):
             self.app.handle_event(wheel)
+        for _ in range(60):
+            self.app.update(1 / 60)
         self.assertLess(self.app.to_world(point).distance_to(world), 1e-8)
         self.assertGreater(self.app.zoom, zoom)
+
+    def test_fractional_wheel_and_fine_adjustment_ease_without_pixel_steps(self):
+        self.load()
+        point = self.app.canvas.center
+        with patch("pygame.mouse.get_pos", return_value=point), patch("pygame.key.get_mods", return_value=pygame.KMOD_SHIFT):
+            self.app.handle_event(pygame.event.Event(pygame.MOUSEWHEEL, y=1, precise_y=0.5))
+        before = self.app.cell_size
+        target = self.app.target_cell_size
+        self.assertGreater(target, before)
+        self.assertLess(target - before, 0.01)
+        self.app.update(1 / 120)
+        self.assertGreater(self.app.cell_size, before)
+        self.assertLess(self.app.cell_size, target)
+        after = self.app.cell_size
+        self.app.update(1 / 120)
+        self.assertGreater(self.app.cell_size, after)
+
+    def test_lock_blocks_geometry_but_allows_view_and_unlock(self):
+        self.load()
+        self.app.grid_offset.update(10.5, 22.1)
+        self.app.action("lock")
+        state = (self.app.cell_size, self.app.grid_offset.copy(), self.app.grid_type)
+        for action in ("hex", "reset", "plus", "minus"):
+            self.app.action(action)
+        self.app.resize_cells(3)
+        self.app.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.canvas.center))
+        self.app.handle_event(pygame.event.Event(pygame.MOUSEMOTION, rel=(100, 100)))
+        self.app.update(1)
+        self.assertEqual((self.app.cell_size, self.app.grid_offset, self.app.grid_type), state)
+        world = self.app.to_world(self.app.canvas.center)
+        zoom = self.app.zoom
+        self.app.zoom_at(self.app.canvas.center, 2)
+        self.app.update(0.1)
+        self.assertGreater(self.app.zoom, zoom)
+        self.assertLess(self.app.to_world(self.app.canvas.center).distance_to(world), 1e-8)
+        self.app.action("lock")
+        self.app.resize_cells(1)
+        self.app.update(1)
+        self.assertGreater(self.app.cell_size, state[0])
+
+    def test_native_4k_fonts_and_section_navigation(self):
+        self.load()
+        base_font = self.app.fonts["title"].get_height()
+        self.app.handle_event(pygame.event.Event(pygame.VIDEORESIZE, w=3840, h=2160))
+        self.assertEqual(self.app.screen.get_size(), (3840, 2160))
+        self.assertGreater(self.app.fonts["title"].get_height(), base_font * 2)
+        for section in ("map", "guide", "grid"):
+            rect = next(r for r, a in self.app.buttons if a == "section_" + section)
+            self.app.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=rect.center))
+            self.assertEqual(self.app.section, section)
+            self.app.draw()
+            for rect, _ in self.app.buttons:
+                self.assertTrue(self.app.sidebar.contains(rect))
+
+    def test_drag_size_field_supports_fractional_precision_and_lock_button(self):
+        self.load()
+        self.app.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.size_control.center))
+        self.assertEqual(self.app.drag, "size")
+        with patch("pygame.key.get_mods", return_value=pygame.KMOD_SHIFT):
+            self.app.handle_event(pygame.event.Event(pygame.MOUSEMOTION, rel=(1, 0)))
+        self.assertAlmostEqual(self.app.target_cell_size, 64.01)
+        lock = next(r for r, a in self.app.buttons if a == "lock")
+        self.app.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=lock.center))
+        self.assertTrue(self.app.grid_locked)
+        self.assertIsNone(self.app.drag)
+
+    def test_easing_is_independent_of_frame_rate(self):
+        self.load()
+        self.app.resize_cells(4)
+        for _ in range(60):
+            self.app.update(1/60)
+        at_60 = self.app.cell_size
+        self.app.cell_size = 64
+        for _ in range(120):
+            self.app.update(1/120)
+        self.assertAlmostEqual(self.app.cell_size, at_60, places=7)
 
     def test_both_grids_render_and_are_clipped_to_map(self):
         self.load()
