@@ -215,6 +215,8 @@ class MapAssistantTests(unittest.TestCase):
             for value in ("-2", "18", "18"):
                 self.app.initiative_text = value
                 self.app.action("confirm_initiative")
+            self.assertEqual(self.app.battle_state, "ties")
+            self.app.action("tie_1")
             self.assertEqual(self.app.turn_order, [1, 2, 0])
             self.assertEqual(self.app.active_actor, 1)
             self.app.draw()
@@ -236,6 +238,52 @@ class MapAssistantTests(unittest.TestCase):
             self.assertEqual(len(self.app.players), count)
             self.app.action("end_battle")
             self.assertIsNone(self.app.active_actor)
+
+    def test_hero_priority_manual_ties_and_round_rotation(self):
+        self.load()
+        self.app.action("toggle_mode")
+        for name, kind in (("Враг", "enemy"), ("Воин", "player"), ("Маг", "player"), ("Второй враг", "enemy")):
+            self.app.character_kind = kind
+            self.app.player_name = name
+            self.app.add_player()
+        self.app.action("start_battle")
+        for value in ("20", "20", "20", "5"):
+            self.app.initiative_text = value
+            self.app.action("confirm_initiative")
+        self.assertEqual(self.app.battle_state, "ties")
+        self.assertEqual(self.app.tie_remaining, [1, 2])
+        self.assertIsNone(self.app.active_actor)
+        self.app.draw()
+        rect = next(r for r, a in self.app.buttons if a == "tie_2")
+        self.app.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=rect.center))
+        self.assertEqual(self.app.turn_order, [2, 1, 0, 3])
+        self.assertEqual(self.app.active_actor, 2)
+        for actor in (1, 0, 3, 2):
+            self.app.token_drag = self.app.active_actor
+            self.app.action("end_turn")
+            self.assertEqual(self.app.active_actor, actor)
+            self.assertIsNone(self.app.token_drag)
+            self.app.draw()
+        self.assertEqual(self.app.round_number, 2)
+        self.app.action("end_battle")
+        self.assertEqual(self.app.round_number, 1)
+        self.assertEqual(self.app.turn_order, [])
+
+    def test_multiple_hero_tie_groups(self):
+        self.load()
+        self.app.action("toggle_mode")
+        for name in ("A", "B", "C", "D"):
+            self.app.player_name = name
+            self.app.add_player()
+        self.app.action("start_battle")
+        for value in ("15", "15", "7", "7"):
+            self.app.initiative_text = value
+            self.app.action("confirm_initiative")
+        self.app.action("tie_1")
+        self.assertEqual(self.app.tie_remaining, [2, 3])
+        self.assertEqual(self.app.battle_state, "ties")
+        self.app.action("tie_3")
+        self.assertEqual(self.app.turn_order, [1, 0, 3, 2])
 
     def test_health_arc_shrinks_symmetrically(self):
         from battle import health_arc_points

@@ -122,7 +122,7 @@ class PlayMode(BattleMode):
         self.notify(f"{name} вступает в приключение.")
 
     def roster_capacity(self):
-        start = 494 if self.battle_state == "active" else 624
+        start = 518 if self.battle_state == "active" else 624
         return max(1, int((self.uh-start-72)//48))
 
     def play_action(self, action):
@@ -243,6 +243,14 @@ class PlayMode(BattleMode):
             x, y = round(center.x), round(center.y)
             if not self.canvas.colliderect(pygame.Rect(x-radius, y-radius, radius*2, radius*2)):
                 continue
+            if self.active_actor == i:
+                extent = max(5, round(radius*.48))
+                outer = radius+extent
+                glow = pygame.Surface((outer*2+2, outer*2+2), pygame.SRCALPHA)
+                for extra in range(extent, 0, -1):
+                    alpha = round(55*(1-extra/(extent+1))**1.5)
+                    pygame.draw.circle(glow, (104, 230, 194, alpha), (outer+1, outer+1), radius+extra)
+                self.screen.blit(glow, (x-outer-1, y-outer-1))
             pygame.gfxdraw.filled_circle(self.screen, x, y, radius, player.color)
             pygame.gfxdraw.aacircle(self.screen, x, y, radius, (246, 214, 145))
             if player.kind == "enemy":

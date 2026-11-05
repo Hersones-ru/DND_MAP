@@ -74,10 +74,16 @@ class FantasyUI:
                 self.buttons = [(self.box(x, 448, 262, 38), "confirm_initiative"),
                                 (self.box(x, 620, 262, 38), "end_battle")]
                 order = []
+            elif self.battle_state == "ties":
+                self.buttons = [(self.box(x, 620, 262, 38), "end_battle")]
+                for row, i in enumerate(self.tie_remaining[self.tie_scroll:self.tie_scroll+5]):
+                    self.buttons.append((self.box(x, 340+row*46, 262, 38), f"tie_{i}"))
+                order = []
             elif self.battle_state == "active":
-                self.buttons = [(self.box(x, 380, 262, 38), "end_battle")]
+                self.buttons = [(self.box(x, 366, 262, 36), "end_turn"),
+                                (self.box(x, 410, 262, 34), "end_battle")]
                 order = self.turn_order
-                roster_start = 494
+                roster_start = 518
             for row, i in enumerate(order[self.player_scroll:self.player_scroll+self.roster_capacity()]):
                 self.buttons.append((self.box(x, roster_start+row*48, 262, 40), f"player_{i}"))
         self.buttons.append((self.box(self.sx+15, 108, 272, 30), "toggle_mode"))
@@ -211,7 +217,13 @@ class FantasyUI:
         labels["add_player"] = "+ Добавить участника"
         labels["start_battle"] = "Начать сражение"
         labels["confirm_initiative"] = "Начать бой" if self.initiative_index == len(self.players)-1 else "Следующий участник"
-        labels["end_battle"] = "Отменить" if self.battle_state == "setup" else "Завершить сражение"
+        labels["end_battle"] = "Отменить" if self.battle_state in ("setup", "ties") else "Завершить сражение"
+        labels["end_turn"] = "Завершить ход"
+        for i, actor in enumerate(self.players):
+            name = actor.name
+            while name and self.fonts["body"].size(name+"…")[0] > self.px(240):
+                name = name[:-1]
+            labels[f"tie_{i}"] = name + ("…" if name != actor.name else "")
         labels["kind_player"] = "Игрок"
         labels["kind_enemy"] = "Противник"
         for i, player in enumerate(self.players):
