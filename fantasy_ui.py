@@ -57,6 +57,13 @@ class FantasyUI:
         }
         for action, y, dx, width in rows[self.section]:
             self.buttons.append((self.box(x + dx, y, width, 38), action))
+        if self.mode == "play":
+            self.buttons = []
+            self.name_field = self.box(x, 296, 262, 44)
+            self.buttons.append((self.box(x, 354, 262, 38), "add_player"))
+            for i in range(self.player_scroll, min(len(self.players), self.player_scroll+self.roster_capacity())):
+                self.buttons.append((self.box(x, 474+(i-self.player_scroll)*48, 262, 40), f"player_{i}"))
+        self.buttons.append((self.box(self.sx+15, 108, 272, 30), "toggle_mode"))
         self._background = self.make_background((w, h))
 
     def make_background(self, size):
@@ -133,6 +140,7 @@ class FantasyUI:
         pygame.draw.rect(self.screen, (12, 14, 23), self.canvas)
         if self.image is not None:
             self.draw_map()
+            self.draw_tokens()
         else:
             cx = self.canvas.centerx / self.ui_scale
             cy = self.canvas.centery / self.ui_scale
@@ -144,7 +152,9 @@ class FantasyUI:
         pygame.draw.rect(self.screen, PANEL, self.sidebar, border_radius=self.px(5))
         self.frame(self.sidebar)
         x = self.sx + 20
-        if self.section == "grid":
+        if self.mode == "play":
+            self.draw_play_panel()
+        elif self.section == "grid":
             self.label("Печати пространства", (x, 214), GOLD, "heading")
             self.label("РАЗМЕР ЯЧЕЙКИ", (x, 301), MUTED, "small")
             pygame.draw.rect(self.screen, (18, 18, 32), self.size_control, border_radius=self.px(5))
@@ -180,8 +190,16 @@ class FantasyUI:
                   "opacity_minus": "−", "opacity_plus": "+", "reset": "Сбросить печать  ·  R",
                   "fit": "Охватить весь мир  ·  F", "actual": "Исходный размер  ·  100%"}
         mouse = pygame.mouse.get_pos()
+        labels["toggle_mode"] = "К редактированию" if self.mode == "play" else "Начать игру"
+        labels["add_player"] = "+ Добавить персонажа"
+        for i, player in enumerate(self.players):
+            # Fit arbitrary Unicode names to the roster width.
+            name = player.name
+            while name and self.fonts["body"].size(name + "…")[0] > self.px(240):
+                name = name[:-1]
+            labels[f"player_{i}"] = name + ("…" if name != player.name else "")
         for rect, action in self.buttons:
-            selected = action in (self.grid_type, "section_" + self.section) or (action == "lock" and self.grid_locked)
+            selected = action in (self.grid_type, "section_" + self.section) or (action == "lock" and self.grid_locked) or action == f"player_{self.selected_player}"
             disabled = self.grid_locked and action in ("square", "hex", "minus", "plus", "reset")
             fill = (62, 46, 68) if selected else (45, 38, 63) if rect.collidepoint(mouse) and not disabled else (33, 29, 48)
             pygame.draw.rect(self.screen, fill, rect, border_radius=self.px(4))
@@ -192,8 +210,8 @@ class FantasyUI:
             self.screen.blit(self.render_text(text, (94, 85, 109) if disabled else GOLD if selected else PALE),
                              (rect.centerx - tw//2, rect.centery - th//2))
         bottom = self.uh - 48
-        self.label("ПЕЧАТЬ ЗАКРЕПЛЕНА" if self.grid_locked else "ПЕЧАТЬ СВОБОДНА", (26, bottom), GOLD, "small")
-        self.label("Ctrl + колесо: вид  ·  Shift: точная настройка", (252, bottom), MUTED, "small")
+        self.label("РЕЖИМ ПРИКЛЮЧЕНИЯ" if self.mode == "play" else "ПЕЧАТЬ ЗАКРЕПЛЕНА" if self.grid_locked else "ПЕЧАТЬ СВОБОДНА", (26, bottom), GOLD, "small")
+        self.label("ЛКМ: монетка  ·  ПКМ: карта  ·  Колесо: вид" if self.mode == "play" else "Ctrl + колесо: вид  ·  Shift: точная настройка", (252, bottom), MUTED, "small")
         if self.image is not None:
             self.label(f"ВИД  {self.zoom*100:.1f}%", (self.sx + 18, bottom), GOLD, "small")
             if self.grid_visible and self.cell_size*self.zoom < 8:

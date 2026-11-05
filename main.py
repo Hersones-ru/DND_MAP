@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pygame
 from fantasy_ui import FantasyUI
+from play import PlayMode
 
 def enable_native_dpi() -> None:
     """Opt out of Windows bitmap scaling before creating the SDL window."""
@@ -24,7 +25,7 @@ def enable_native_dpi() -> None:
                 pass
 
 
-class MapAssistant(FantasyUI):
+class MapAssistant(PlayMode, FantasyUI):
     def __init__(self, size: tuple[int, int] = (1280, 820)) -> None:
         enable_native_dpi()
         pygame.init()
@@ -53,6 +54,7 @@ class MapAssistant(FantasyUI):
         self.message = ""
         self.message_until = 0
         self.buttons: list[tuple[pygame.Rect, str]] = []
+        self.init_play()
         self.layout()
 
     def notify(self, message: str) -> None:
@@ -67,6 +69,10 @@ class MapAssistant(FantasyUI):
             self.notify("Не удалось открыть изображение. Попробуйте PNG или JPEG.")
             return False
         self.image = image
+        self.players.clear()
+        self.selected_player = None
+        self.player_scroll = 0
+        self.token_drag = None
         self._scaled_key = None
         self._scaled_map = None
         self.filename = Path(path).name
@@ -99,14 +105,14 @@ class MapAssistant(FantasyUI):
         self.target_zoom = max(0.005, min(8.0, self.target_zoom * math.exp(0.10 * max(-20, min(20, steps)))))
 
     def resize_cells(self, steps: float, fine: bool = False) -> None:
-        if not self.grid_locked:
+        if not self.grid_locked and self.mode == "edit":
             rate = 0.0002 if fine else 0.01
             self.target_cell_size = max(8.0, min(1024.0, self.target_cell_size * math.exp(rate * max(-20, min(20, steps)))))
 
     def update(self, dt: float) -> None:
         """Frame-rate independent easing; geometry stays in fractional map pixels."""
         blend = -math.expm1(-20 * max(0, dt))
-        if not self.grid_locked:
+        if not self.grid_locked and self.mode == "edit":
             self.cell_size += (self.target_cell_size - self.cell_size) * blend
             if abs(self.target_cell_size - self.cell_size) < 1e-8:
                 self.cell_size = self.target_cell_size
@@ -118,6 +124,10 @@ class MapAssistant(FantasyUI):
             self.pan = pygame.Vector2(self.zoom_anchor) - self.canvas.topleft - world * self.zoom
 
     def action(self, action: str) -> None:
+        if self.play_action(action):
+            return
+        if self.mode == "play" and action in ("square", "hex", "minus", "plus", "reset", "lock"):
+            return
         if action.startswith("section_"):
             self.section = action.removeprefix("section_")
             self.layout()
@@ -149,6 +159,8 @@ class MapAssistant(FantasyUI):
             self.reset_grid()
 
     def handle_event(self, event: pygame.event.Event) -> None:
+        if self.handle_play_event(event):
+            return
         if event.type == pygame.QUIT:
             self.running = False
         elif event.type == pygame.VIDEORESIZE:
@@ -178,7 +190,7 @@ class MapAssistant(FantasyUI):
                     if rect.collidepoint(event.pos):
                         self.action(action)
                         return
-                if self.section == "grid" and self.size_control.collidepoint(event.pos) and not self.grid_locked:
+                if self.mode == "edit" and self.section == "grid" and self.size_control.collidepoint(event.pos) and not self.grid_locked:
                     self.drag, self.drag_button = "size", 1
                     return
             if self.image is not None and self.canvas.collidepoint(event.pos):

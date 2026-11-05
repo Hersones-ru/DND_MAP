@@ -132,8 +132,56 @@ class MapAssistantTests(unittest.TestCase):
             self.app.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=rect.center))
             self.assertEqual(self.app.section, section)
             self.app.draw()
-            for rect, _ in self.app.buttons:
-                self.assertTrue(self.app.sidebar.contains(rect))
+            for rect, action in self.app.buttons:
+                if action != "toggle_mode":
+                    self.assertTrue(self.app.sidebar.contains(rect))
+
+    def test_play_spawn_move_and_reject_occupied_cell_for_both_grids(self):
+        for kind in ("square", "hex"):
+            self.app.mode = "edit"
+            self.load()
+            self.app.grid_type = kind
+            self.app.mode = "edit"
+            self.app.action("toggle_mode")
+            for name in ("Эльминстер", "Луна"):
+                self.app.player_name = name
+                self.app.action("add_player")
+            self.assertEqual(len(self.app.players), 2)
+            first, second = self.app.players
+            self.assertNotEqual(first.cell, second.cell)
+            self.assertEqual(self.app.cell_at(self.app.cell_center(first.cell)), first.cell)
+            old = first.cell
+            origin = pygame.Vector2(self.app.canvas.topleft) + self.app.pan
+            def screen(cell):
+                p = origin + self.app.cell_center(cell)*self.app.zoom
+                return round(p.x), round(p.y)
+            self.app.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=screen(old)))
+            self.app.handle_event(pygame.event.Event(pygame.MOUSEBUTTONUP, button=1, pos=screen(second.cell)))
+            self.assertEqual(first.cell, old)
+            dest = (old[0]+2, old[1])
+            self.assertTrue(self.app.cell_available(dest))
+            self.app.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=screen(old)))
+            self.app.handle_event(pygame.event.Event(pygame.MOUSEBUTTONUP, button=1, pos=screen(dest)))
+            self.assertEqual(first.cell, dest)
+            self.app.draw()
+            size = self.app.cell_size
+            self.app.resize_cells(5)
+            self.app.action("reset")
+            self.app.update(1)
+            self.assertEqual(self.app.cell_size, size)
+
+    def test_play_text_entry_does_not_trigger_shortcuts(self):
+        self.load()
+        self.app.action("toggle_mode")
+        self.app.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=self.app.name_field.center))
+        self.app.handle_event(pygame.event.Event(pygame.TEXTINPUT, text="Грим"))
+        self.app.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_g))
+        self.assertTrue(self.app.grid_visible)
+        self.app.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
+        self.assertEqual(self.app.players[0].name, "Грим")
+        self.app.player_name = "  "
+        self.app.add_player()
+        self.assertEqual(len(self.app.players), 1)
 
     def test_drag_size_field_supports_fractional_precision_and_lock_button(self):
         self.load()
