@@ -12,6 +12,9 @@ class Character:
     name: str
     cell: tuple[int, int]
     color: tuple[int, int, int]
+    hp: int = 10
+    max_hp: int = 10
+    kind: str = "player"
 
 
 class PlayMode:
@@ -20,6 +23,10 @@ class PlayMode:
         self.players = []
         self.player_name = ""
         self.name_focused = False
+        self.input_field = "name"
+        self.hp_input = "10"
+        self.max_hp_input = "10"
+        self.character_kind = "player"
         self.selected_player = None
         self.token_drag = None
         self.token_pointer = None
@@ -62,6 +69,13 @@ class PlayMode:
         if not name:
             self.notify("Введите имя персонажа.")
             return
+        try:
+            hp, max_hp = int(self.hp_input), int(self.max_hp_input)
+            if not 0 <= hp <= max_hp <= 99999 or max_hp == 0:
+                raise ValueError
+        except ValueError:
+            self.notify("ХП: целые числа; максимум 1–99999, текущие от 0 до максимума.")
+            return
         # Search outward from the viewport, clamped to the actual map.
         w, h = self.image.get_size()
         p = self.to_world(self.canvas.center)
@@ -93,7 +107,8 @@ class PlayMode:
             self.notify("На карте нет свободной полной клетки. Уменьшите сетку.")
             return
         colors = [(193, 143, 71), (111, 154, 179), (153, 116, 180), (110, 162, 125), (193, 113, 109)]
-        self.players.append(Character(name, chosen, colors[len(self.players) % len(colors)]))
+        color = (180, 72, 84) if self.character_kind == "enemy" else colors[len(self.players) % len(colors)]
+        self.players.append(Character(name, chosen, color, hp, max_hp, self.character_kind))
         self.selected_player = len(self.players)-1
         self.player_scroll = max(0, len(self.players)-self.roster_capacity())
         self.player_name = ""
@@ -101,9 +116,12 @@ class PlayMode:
         self.notify(f"{name} вступает в приключение.")
 
     def roster_capacity(self):
-        return max(1, int((self.uh-480)//48))
+        return max(1, int((self.uh-644)//48))
 
     def play_action(self, action):
+        if action in ("kind_player", "kind_enemy"):
+            self.character_kind = action.removeprefix("kind_")
+            return True
         if action == "toggle_mode":
             self.mode = "play" if self.mode == "edit" else "edit"
             self.target_cell_size = self.cell_size
@@ -129,12 +147,24 @@ class PlayMode:
         if event.type == pygame.DROPFILE:
             self.notify("Для замены карты переключитесь в редактирование.")
             return True
+        fields = {"name": "player_name", "hp": "hp_input", "max_hp": "max_hp_input"}
         if event.type == pygame.TEXTINPUT and self.name_focused:
-            self.player_name = (self.player_name + "".join(c for c in event.text if c.isprintable()))[:40]
+            attr = fields[self.input_field]
+            text = "".join(c for c in event.text if c.isprintable())
+            if self.input_field != "name":
+                text = "".join(c for c in text if c in "0123456789")
+            limit = 40 if self.input_field == "name" else 5
+            setattr(self, attr, (getattr(self, attr) + text)[:limit])
             return True
         if event.type == pygame.KEYDOWN and self.name_focused:
+            attr = fields[self.input_field]
             if event.key == pygame.K_BACKSPACE:
-                self.player_name = self.player_name[:-1]
+                setattr(self, attr, getattr(self, attr)[:-1])
+            elif event.key == pygame.K_TAB:
+                order = list(fields)
+                step = -1 if getattr(event, "mod", 0) & pygame.KMOD_SHIFT else 1
+                self.input_field = order[(order.index(self.input_field)+step) % len(order)]
+                pygame.key.set_text_input_rect(self.input_rects[self.input_field])
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 self.add_player()
             elif event.key == pygame.K_ESCAPE:
@@ -146,10 +176,13 @@ class PlayMode:
             self.name_focused = False
             pygame.key.stop_text_input()
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            self.name_focused = self.name_field.collidepoint(event.pos)
+            field = next((name for name, rect in self.input_rects.items() if rect.collidepoint(event.pos)), None)
+            self.name_focused = field is not None
+            if field is not None:
+                self.input_field = field
             if self.name_focused:
                 pygame.key.start_text_input()
-                pygame.key.set_text_input_rect(self.name_field)
+                pygame.key.set_text_input_rect(self.input_rects[self.input_field])
                 return True
             pygame.key.stop_text_input()
             if self.canvas.collidepoint(event.pos):
@@ -195,6 +228,9 @@ class PlayMode:
                 continue
             pygame.gfxdraw.filled_circle(self.screen, x, y, radius, player.color)
             pygame.gfxdraw.aacircle(self.screen, x, y, radius, (246, 214, 145))
+            if player.kind == "enemy":
+                pygame.draw.line(self.screen, (255, 207, 180), (x-radius//2, y-radius//2),
+                                 (x+radius//2, y-radius//2), max(1, self.px(2)))
             if self.selected_player == i:
                 pygame.gfxdraw.aacircle(self.screen, x, y, radius+3, (246, 214, 145))
             glyph = self.render_text(player.name[:1].upper(), (28, 22, 35))
@@ -205,11 +241,17 @@ class PlayMode:
     def draw_play_panel(self):
         from fantasy_ui import GOLD, MUTED, PALE, EDGE
         x = self.sx+20
-        self.label("Спутники истории", (x, 220), GOLD, "heading")
-        self.label("Имя персонажа", (x, 272), MUTED, "small")
-        pygame.draw.rect(self.screen, (18, 18, 32), self.name_field, border_radius=self.px(4))
-        pygame.draw.rect(self.screen, GOLD if self.name_focused else EDGE, self.name_field, 1)
-        self.label(self.player_name + ("|" if self.name_focused and pygame.time.get_ticks()%1000 < 500 else ""),
-                   (x+9, 303), PALE, max_width=240)
-        self.label("ЛКМ: перетащить монетку", (x, 408), MUTED, "small")
-        self.label("Список: выбрать и найти", (x, 433), MUTED, "small")
+        self.label("Участники истории", (x, 220), GOLD, "heading")
+        self.label("Имя персонажа / существа", (x, 310), MUTED, "small")
+        self.label("Текущие ХП", (x, 392), MUTED, "small")
+        self.label("Максимум ХП", (x+136, 392), MUTED, "small")
+        values = {"name": self.player_name, "hp": self.hp_input, "max_hp": self.max_hp_input}
+        for key, rect in self.input_rects.items():
+            focused = self.name_focused and self.input_field == key
+            pygame.draw.rect(self.screen, (18, 18, 32), rect, border_radius=self.px(4))
+            pygame.draw.rect(self.screen, GOLD if focused else EDGE, rect, max(1, self.px(1)))
+            cursor = "|" if focused and pygame.time.get_ticks()%1000 < 500 else ""
+            self.label(values[key]+cursor, (rect.x/self.ui_scale+9, rect.y/self.ui_scale+10),
+                       PALE, max_width=rect.w/self.ui_scale-18)
+        self.label("ЛКМ: перетащить монетку", (x, 526), MUTED, "small")
+        self.label("Список: выбрать и найти", (x, 551), MUTED, "small")

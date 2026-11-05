@@ -170,6 +170,48 @@ class MapAssistantTests(unittest.TestCase):
             self.app.update(1)
             self.assertEqual(self.app.cell_size, size)
 
+    def test_hp_validation_and_enemy_creation(self):
+        self.load()
+        self.app.action("toggle_mode")
+        for hp, maximum in (("15", "14"), ("-1", "14"), ("1", "0"), ("", "14"), ("abc", "20")):
+            self.app.player_name = "Гоблин"
+            self.app.hp_input, self.app.max_hp_input = hp, maximum
+            self.app.add_player()
+            self.assertEqual(len(self.app.players), 0)
+        self.app.hp_input, self.app.max_hp_input = "12", "14"
+        self.app.add_player()
+        hero = self.app.players[0]
+        self.assertEqual((hero.hp, hero.max_hp, hero.kind), (12, 14, "player"))
+        self.app.action("kind_enemy")
+        self.app.player_name = "Гоблин"
+        self.app.hp_input, self.app.max_hp_input = "0", "7"
+        self.app.add_player()
+        enemy = self.app.players[1]
+        self.assertEqual((enemy.hp, enemy.max_hp, enemy.kind), (0, 7, "enemy"))
+        self.assertNotEqual(hero.cell, enemy.cell)
+        self.app.draw()
+        self.app.handle_event(pygame.event.Event(pygame.VIDEORESIZE, w=900, h=680))
+        self.app.draw()
+        for rect, action in self.app.buttons:
+            if action != "toggle_mode":
+                self.assertTrue(self.app.sidebar.contains(rect))
+
+    def test_hp_input_and_tab_navigation(self):
+        self.load()
+        self.app.action("toggle_mode")
+        hp_rect = self.app.input_rects["hp"]
+        self.app.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=hp_rect.center))
+        self.app.hp_input = ""
+        self.app.handle_event(pygame.event.Event(pygame.TEXTINPUT, text="12abc"))
+        self.assertEqual(self.app.hp_input, "12")
+        self.app.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB, mod=0))
+        self.assertEqual(self.app.input_field, "max_hp")
+        self.app.max_hp_input = ""
+        self.app.handle_event(pygame.event.Event(pygame.TEXTINPUT, text="14"))
+        self.app.player_name = "Игрок1"
+        self.app.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
+        self.assertEqual((self.app.players[0].hp, self.app.players[0].max_hp), (12, 14))
+
     def test_play_text_entry_does_not_trigger_shortcuts(self):
         self.load()
         self.app.action("toggle_mode")

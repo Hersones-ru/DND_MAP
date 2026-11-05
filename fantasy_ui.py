@@ -59,10 +59,14 @@ class FantasyUI:
             self.buttons.append((self.box(x + dx, y, width, 38), action))
         if self.mode == "play":
             self.buttons = []
-            self.name_field = self.box(x, 296, 262, 44)
-            self.buttons.append((self.box(x, 354, 262, 38), "add_player"))
+            self.name_field = self.box(x, 334, 262, 44)
+            self.input_rects = {"name": self.name_field, "hp": self.box(x, 414, 126, 42),
+                                "max_hp": self.box(x+136, 414, 126, 42)}
+            self.buttons.extend([(self.box(x, 260, 126, 34), "kind_player"),
+                                 (self.box(x+136, 260, 126, 34), "kind_enemy"),
+                                 (self.box(x, 476, 262, 38), "add_player")])
             for i in range(self.player_scroll, min(len(self.players), self.player_scroll+self.roster_capacity())):
-                self.buttons.append((self.box(x, 474+(i-self.player_scroll)*48, 262, 40), f"player_{i}"))
+                self.buttons.append((self.box(x, 594+(i-self.player_scroll)*48, 262, 40), f"player_{i}"))
         self.buttons.append((self.box(self.sx+15, 108, 272, 30), "toggle_mode"))
         self._background = self.make_background((w, h))
 
@@ -191,21 +195,34 @@ class FantasyUI:
                   "fit": "Охватить весь мир  ·  F", "actual": "Исходный размер  ·  100%"}
         mouse = pygame.mouse.get_pos()
         labels["toggle_mode"] = "К редактированию" if self.mode == "play" else "Начать игру"
-        labels["add_player"] = "+ Добавить персонажа"
+        labels["add_player"] = "+ Добавить участника"
+        labels["kind_player"] = "Игрок"
+        labels["kind_enemy"] = "Противник"
         for i, player in enumerate(self.players):
             # Fit arbitrary Unicode names to the roster width.
-            name = player.name
-            while name and self.fonts["body"].size(name + "…")[0] > self.px(240):
+            name = ("Враг · " if player.kind == "enemy" else "") + player.name
+            full_name = name
+            available = self.px(262-30)-self.fonts["body"].size(f"{player.hp}/{player.max_hp}")[0]
+            while name and self.fonts["body"].size(name + "…")[0] > available:
                 name = name[:-1]
-            labels[f"player_{i}"] = name + ("…" if name != player.name else "")
+            labels[f"player_{i}"] = name + ("…" if name != full_name else "")
         for rect, action in self.buttons:
-            selected = action in (self.grid_type, "section_" + self.section) or (action == "lock" and self.grid_locked) or action == f"player_{self.selected_player}"
+            selected = action in (self.grid_type, "section_" + self.section) or (action == "lock" and self.grid_locked) or action == f"player_{self.selected_player}" or action == "kind_" + self.character_kind
             disabled = self.grid_locked and action in ("square", "hex", "minus", "plus", "reset")
             fill = (62, 46, 68) if selected else (45, 38, 63) if rect.collidepoint(mouse) and not disabled else (33, 29, 48)
             pygame.draw.rect(self.screen, fill, rect, border_radius=self.px(4))
             pygame.draw.rect(self.screen, GOLD if selected else EDGE, rect, max(1, self.px(1)), border_radius=self.px(4))
             text = labels[action]
             face = self.fonts["body"]
+            if action.startswith("player_"):
+                actor = self.players[int(action.split("_")[1])]
+                hp_text = f"{actor.hp}/{actor.max_hp}"
+                # Reserve the right side for health regardless of name length.
+                glyph = self.render_text(text, PALE)
+                self.screen.blit(glyph, (rect.x+self.px(9), rect.centery-glyph.get_height()//2))
+                health = self.render_text(hp_text, (219, 125, 132) if actor.kind == "enemy" else GOLD)
+                self.screen.blit(health, (rect.right-self.px(8)-health.get_width(), rect.centery-health.get_height()//2))
+                continue
             tw, th = face.size(text)
             self.screen.blit(self.render_text(text, (94, 85, 109) if disabled else GOLD if selected else PALE),
                              (rect.centerx - tw//2, rect.centery - th//2))
