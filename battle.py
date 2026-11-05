@@ -5,14 +5,14 @@ import pygame
 
 
 def health_arc_points(center, radius, fraction):
-    """Remaining arc stays centered at the top; both ends retreat equally."""
+    """Remaining arc stays centered at the bottom; both ends retreat equally."""
     fraction = max(0.0, min(1.0, fraction))
     if fraction == 0:
         return []
     span = math.tau*fraction
     steps = max(8, math.ceil(span*radius/2))
-    return [(center[0]+radius*math.cos(-math.pi/2-span/2+span*i/steps),
-             center[1]+radius*math.sin(-math.pi/2-span/2+span*i/steps)) for i in range(steps+1)]
+    return [(center[0]+radius*math.cos(math.pi/2-span/2+span*i/steps),
+             center[1]+radius*math.sin(math.pi/2-span/2+span*i/steps)) for i in range(steps+1)]
 
 
 class BattleMode:

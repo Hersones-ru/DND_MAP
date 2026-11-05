@@ -291,11 +291,14 @@ class MapAssistantTests(unittest.TestCase):
         for fraction in (1, .75, .5, .25):
             points = health_arc_points((100, 100), 30, fraction)
             first, last = points[0], points[-1]
+            midpoint = points[len(points)//2]
+            self.assertGreater(midpoint[1], 129)
             self.assertAlmostEqual(first[0]+last[0], 200)
             self.assertAlmostEqual(first[1], last[1])
             for x, y in points:
                 self.assertAlmostEqual(math.hypot(x-100, y-100), 30)
         self.assertEqual(health_arc_points((0, 0), 30, 0), [])
+        self.assertTrue(all(y >= 100-1e-8 for x, y in health_arc_points((100, 100), 30, .5)))
 
     def test_hp_input_and_tab_navigation(self):
         self.load()
